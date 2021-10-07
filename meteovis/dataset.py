@@ -1,5 +1,7 @@
 """
 Classes related to dataset operations
+
+Author: @jiqicn
 """
 import os
 import h5py

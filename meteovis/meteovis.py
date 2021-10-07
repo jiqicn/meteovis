@@ -1,5 +1,7 @@
 """
 GUIs of processing data, listing datasets, and visualizing data
+
+Author: @jiqicn
 """
 from .dataset import (DatasetGenerator, Dataset, DATASET_DIR)
 
