@@ -3,7 +3,6 @@ from setuptools import setup
 setup(
     name = 'meteovis',
     packages = ['meteovis'],
-    package_dir = {"": "./meteovis"},  # must be a relative path
     version = '0.1.0a',
     license='MIT',
     description = 'A jupyter-based tool for visualizing and exploring meteorological and bioecological data hosted at UvA-TCE.',
