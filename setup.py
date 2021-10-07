@@ -19,8 +19,6 @@ setup(
         'h5py', 
         'numpy', 
         'wradlib', 
-        'gdal',
-        'libgdal', 
     ],
     classifiers=[
         'Development Status :: 3 - Alpha', 
