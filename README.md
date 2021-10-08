@@ -1,4 +1,4 @@
-# meteovis
+# MeteoVis
 A jupyter-based tool for visualizing and exploring meteorological and bioecological data hosted at UvA-TCE.
 
 ## Install
@@ -21,3 +21,8 @@ Install meteovis with the following command:
 ```console
 conda install -c jiqi meteovis
 ```
+
+## Something to Note
+
+### Dataset Folder
+By importing MeteVis, a folder named ```dataset``` will be automatically created in the same folder of your Jupyter notebook. This is the place where you can find your datasets.

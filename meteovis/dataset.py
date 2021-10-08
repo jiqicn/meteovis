@@ -1,5 +1,5 @@
 """
-Classes related to dataset operations
+Classes related to dataset and its operations
 
 Author: @jiqicn
 """
@@ -59,9 +59,14 @@ class DatasetGenerator(object):
         # get the sample file that is the first file in the dir
         # assumption: files in the same dataset follow the same scheme
         try:
-            file_name = [fn for fn in os.listdir(dir_path) 
-                         if not fn.startswith('.')][0]
-            file_path = os.path.join(dir_path, file_name)
+            for fn in os.listdir(dir_path):
+                if not fn.startswith('.'):
+                    file_name = fn
+                    break
+            file_path = os.path.join(
+                dir_path, 
+                file_name
+            )
         except TypeError:
             print("\033[91m! Invalid path\033[0m")
             return
@@ -70,7 +75,9 @@ class DatasetGenerator(object):
             return
         
         if src == "pvol":
-            return self.__get_options_pvol(file_path)
+            return self.__get_options_pvol(
+                file_path
+            )
     
     def __get_options_pvol(self, file_path):
         """
@@ -84,9 +91,15 @@ class DatasetGenerator(object):
         qty_list = [("", "")]
         
         with h5py.File(file_path, "r") as f:
-            scan_names = [s for s in f.keys() if "dataset" in s]
+            scan_names = []
+            for s in f.keys():
+                if 'dataset' in s:
+                    scan_names.append(s)
             # sort scan names by the digits within
-            scan_names = sorted(scan_names, key=lambda x: int("".join([i for i in x if i.isdigit()])))
+            scan_names = sorted(
+                scan_names, 
+                key=lambda x: int("".join([i for i in x if i.isdigit()]))
+            )
             for i in range(len(scan_names)):
                 sn = scan_names[i]
                 elangle = f[sn]["where"].attrs["elangle"]
@@ -266,6 +279,11 @@ class DatasetGenerator(object):
                 f["data"].create_dataset(m[0], data=m[1], compression="gzip", compression_opts=9)
                 
 class Dataset:
+    """
+    abstraction of dataset
+    
+    enable operations on datasets, including algebra, merging, etc.
+    """
     def __init__(self, dataset_path):
         self.dataset_path = dataset_path
         with h5py.File(dataset_path, "r") as f:
@@ -278,3 +296,9 @@ class Dataset:
             self.cmap = eval(f["meta"].attrs["cmap"])
             self.timeline = f["meta"].attrs["timeline"].tolist()
             self.bbox = f["meta"].attrs["bbox"].tolist()
+            
+    def remove(self):
+        """
+        remove dataset file from disk
+        """
+        os.remove(self.dataset_path)
