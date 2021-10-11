@@ -24,5 +24,5 @@ conda install -c jiqi meteovis
 
 ## Something to Note
 
-### Dataset Folder
-By importing MeteVis, a folder named ```dataset``` will be automatically created in the same folder of your Jupyter notebook. This is the place where you can find your datasets.
+### Dataset and Cache Folder
+By importing MeteVis, two folders named ```dataset``` and ```cache``` will be automatically created in the same folder as your working notebook. This is the place where you can find your datasets and image cache.

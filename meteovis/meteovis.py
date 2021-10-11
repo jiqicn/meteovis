@@ -199,7 +199,7 @@ def operate_datasets(dir_path=DATASET_DIR):
     )
     w_tabs.children += (
         widgets.VBox([
-            widgets.HTML('<b>Select ONE dataset if you want to operate it.</b>'), 
+            widgets.HTML('<b>Select ONE dataset for the operations below.</b>'), 
             widgets.HBox([
                 w_refresh, 
                 w_remove, 
@@ -211,17 +211,19 @@ def operate_datasets(dir_path=DATASET_DIR):
     w_select_vis = widgets.Button(
         description="Confirm Selection"
     )
+    w_vis_output = widgets.Output()
     w_view_box = widgets.HBox() # where to add views
     w_ctrl_box = widgets.VBox() # where to add controls like animation player
     w_tabs.children += (
         widgets.VBox([
             widgets.HTML(
-                '<p><b>Select ONE or TWO dataset(s) to visualize.</b></p>' + 
+                '<p><b>Select ONE or TWO dataset(s) for visualization.</b></p>' + 
                 '<p>If you select two datasets, they will be presented side-by-side.</p>' +
                 '<p>If you select more than two datasets, only the first two will be visualized.<p>' +
                 '<p>Press the button below to confirm your selection.</p>'
             ), 
             w_select_vis, 
+            w_vis_output, 
             w_view_box, 
             w_ctrl_box, 
         ]), 
@@ -296,11 +298,19 @@ def operate_datasets(dir_path=DATASET_DIR):
             ds = Dataset(dp)
             v = View(ds)
             views.append(v)
-    
+        
+        # render datasets into cache
+        w_vis_output.clear_output()
+        for v in views:
+            with w_vis_output:
+                v.create_cache()
+        
+        # initialize controls and views
+        ap = AnimePlayer(views)
+        
+        # display maps and controls
         for v in views:
             w_view_box.children += (v.view, )
-        
-        ap = AnimePlayer(views)
         w_ctrl_box.children += (ap.player, )
         
     w_select_vis.on_click(select_vis_on_click)

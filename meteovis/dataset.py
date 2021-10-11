@@ -1,5 +1,5 @@
 """
-Classes related to dataset and its operations
+classes related to dataset and its operations
 
 Author: @jiqicn
 """
