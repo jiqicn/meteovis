@@ -3,7 +3,7 @@ GUIs of processing data, listing datasets, and visualizing data
 
 Author: @jiqicn
 """
-from .dataset import (DatasetGenerator, Dataset, DATASET_DIR)
+from .dataset import DatasetGenerator, Dataset, DATASET_DIR
 from .view import View
 from .control import AnimePlayer
 
@@ -307,11 +307,12 @@ def operate_datasets(dir_path=DATASET_DIR):
         
         # initialize controls and views
         ap = AnimePlayer(views)
+        ap.init_views()
         
         # display maps and controls
         for v in views:
-            w_view_box.children += (v.view, )
-        w_ctrl_box.children += (ap.player, )
+            w_view_box.children += (v.map, )
+        w_ctrl_box.children += (ap.get_player(), )
         
     w_select_vis.on_click(select_vis_on_click)
     

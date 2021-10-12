@@ -9,10 +9,11 @@ import matplotlib.pyplot as plt
 import multiprocessing as mp
 import h5py
 import os
-from ipyleaflet import Map, basemaps, FullScreenControl
+from ipyleaflet import Map, basemaps, FullScreenControl, ImageOverlay
 
 
 CACHE_DIR = os.getcwd() + "/cache"
+EMPTY_IMAGE = "data:image/png;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA="
 
 
 class View(object):
@@ -23,23 +24,32 @@ class View(object):
         self.dataset = dataset
         self.id = dataset.id
         self.timeline = dataset.timeline
-        self.view = Map(
+        
+        # interactive map
+        self.map = Map(
             center=dataset.options["center"], 
             zoom=7, 
             scroll_wheel_zoom=True, 
             attribution_control=False, 
         )
-        self.view.add_control(FullScreenControl())
+        self.map.add_control(FullScreenControl())
         
-    def update_view(self, img):
+        # raster layer
+        self.raster = ImageOverlay(
+            url=EMPTY_IMAGE, 
+            bounds=dataset.bbox, 
+            opacity=1
+        )
+        self.map.add_layer(self.raster)
+        
+    def update_raster(self, img):
         """
         initialize the interactive map and put the raster layer
         
         -parameters-
         img[str]: image buffer encoded in base64
         """
-        pass
-        
+        self.raster.url = img
         
     def create_cache(self, cache_dir=CACHE_DIR):
         """
@@ -57,7 +67,7 @@ class View(object):
         pool = mp.Pool(mp.cpu_count() + 2)
         jobs = []
         
-        print("Rendering and caching......", end="", flush=True)
+        print("[" + dataset_id + "]" + "Rendering and caching......", end="", flush=True)
         for rn in raster_names:
             job = pool.apply_async(
                 self.render_image, 
@@ -86,6 +96,8 @@ class View(object):
         """
         image_name = dataset_id + "_" + raster_name + ".png"
         image_path = os.path.join(cache_dir, image_name)
+        if os.path.isfile(image_path): 
+            return
         
         with h5py.File(dataset_path, "r") as f:
             raster = f["data"][raster_name][...]

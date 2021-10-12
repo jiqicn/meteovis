@@ -5,7 +5,7 @@ Author: @jiqicn
 """
 
 import ipywidgets as widgets
-from .view import CACHE_DIR
+from .view import CACHE_DIR, EMPTY_IMAGE
 from PIL import Image
 from io import BytesIO
 import os
@@ -13,7 +13,7 @@ import base64
 
 
 IMAGE_BUFFER_SIZE = 100
-EMPTY_IMAGE = "data:image/png;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA="
+ANIME_SPEED = 400  # speed control, miliseconds between every two frames
 
 
 class AnimePlayer(object):
@@ -36,13 +36,58 @@ class AnimePlayer(object):
         self.timeline.sort()
         
         # initialize the player widget
-        self.player = widgets.HTML("Player")
+        self.player = widgets.Play(
+            value=0, 
+            min=0, 
+            max=len(self.timeline) - 1, 
+            interval=ANIME_SPEED,  
+        )
+        self.slider = widgets.SelectionSlider(
+            value=self.timeline[0], 
+            options=self.timeline, 
+        )
+        
+        # event of player and slider
+        def change_player(e):
+            i = e["new"]
+            raster_name = self.timeline[i]
+            self.slider.value = raster_name
+            self.update_views(raster_name)
+        self.player.observe(change_player, names="value")
+        
+        def change_slider(e):
+            raster_name = e["new"]
+            i = self.timeline.index(raster_name)
+            self.player.value = i
+            self.update_views(raster_name)
+        self.slider.observe(change_slider, names="value")
+        
+    def get_player(self):
+        """
+        return the player and the slider as a whole
+        """
+        return widgets.HBox([
+            widgets.HTML("<b>Timeline&nbsp<b>"), 
+            self.player, 
+            self.slider, 
+        ])
+    
+    def update_views(self, raster_name):
+        """
+        update both views
+        """
+        for v in self.views:
+            vid = v.id
+            img_name = vid + "_" + raster_name + ".png"
+            img = self.buffer[img_name]
+            v.update_raster(img)
 
     def init_views(self):
         """
         initialize the views by loading and overlaying the raster of the first timestamp
         """
-        pass
+        raster_name = self.timeline[0]
+        self.update_views(raster_name)
     
         
 class ImageBuffer(dict):
