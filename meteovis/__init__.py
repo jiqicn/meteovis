@@ -14,3 +14,5 @@ if __import__("meteovis"):
         os.mkdir(DATASET_DIR)
     if not os.path.exists(CACHE_DIR):
         os.mkdir(CACHE_DIR)
+    if not os.path.exists(TEMP_DIR):
+        os.mkdir(TEMP_DIR)

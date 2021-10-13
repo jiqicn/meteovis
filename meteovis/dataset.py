@@ -11,9 +11,11 @@ import uuid
 import multiprocessing as mp
 import time
 import json
+import numpy as np
 
 
 DATASET_DIR = os.getcwd() + "/dataset"
+TEMP_DIR = os.getcwd() + "/temp"
 
 
 class Colorbar(object):
@@ -158,8 +160,9 @@ class DatasetGenerator(object):
             result = job.get()
             timeline.append(result[0])
             bbox = result[1]
-            options["center"] = result[2]
-            options["radar"] = result[3]
+            res = result[2]  # resolution, rows * cols
+            options["center"] = result[3]
+            options["radar"] = result[4]
         timeline.sort()
         q.put("kill")
         pool.close()
@@ -173,6 +176,7 @@ class DatasetGenerator(object):
             f["meta"].attrs.create("desc", desc)
             f["meta"].attrs.create("src", src)
             f["meta"].attrs.create("crs", crs)
+            f["meta"].attrs.create("res", res)
             f["meta"].attrs.create("timeline", timeline)
             f["meta"].attrs.create("options", json.dumps(options))
             f["meta"].attrs.create("cmap", str(cmap))
@@ -262,7 +266,7 @@ class DatasetGenerator(object):
         # put data to the queue
         q.put((dt, data))
             
-        return (dt, bbox, center, radar)
+        return (dt, bbox, data.shape, center, radar)
     
     def write_dataset_file(self, q):
         """
@@ -284,21 +288,98 @@ class Dataset:
     
     enable operations on datasets, including algebra, merging, etc.
     """
-    def __init__(self, dataset_path):
+    def __init__(self, dataset_path=None):
         self.dataset_path = dataset_path
-        with h5py.File(dataset_path, "r") as f:
-            self.id = f["meta"].attrs["id"]
-            self.name = f["meta"].attrs["name"]
-            self.desc = f["meta"].attrs["desc"]
-            self.src = f["meta"].attrs["src"]
-            self.crs = f["meta"].attrs["crs"]
-            self.options = json.loads(f["meta"].attrs["options"])
-            self.cmap = eval(f["meta"].attrs["cmap"])
-            self.timeline = f["meta"].attrs["timeline"].tolist()
-            self.bbox = f["meta"].attrs["bbox"].tolist()
+
+        # read dataset file if it's not an empty dataset object
+        if dataset_path is not None:
+            with h5py.File(dataset_path, "r") as f:
+                self.id = f["meta"].attrs["id"]
+                self.name = f["meta"].attrs["name"]
+                self.desc = f["meta"].attrs["desc"]
+                self.src = f["meta"].attrs["src"]
+                self.crs = f["meta"].attrs["crs"]
+                self.res = f["meta"].attrs["res"]
+                self.options = json.loads(f["meta"].attrs["options"])
+                self.cmap = eval(f["meta"].attrs["cmap"])
+                self.timeline = f["meta"].attrs["timeline"].tolist()
+                self.bbox = f["meta"].attrs["bbox"].tolist()
             
     def remove(self):
         """
         remove dataset file from disk
         """
         os.remove(self.dataset_path)
+        
+    def merge(self, mode, *datasets):
+        """
+        merge two or more datasets into one
+
+        -parameters-
+        mode[str]: indicate in which way the datasets should be merged, options include "max", "min", "avg"
+        datasets[arb]: arbitrary number of datasets
+        """
+        # initialize dataset
+        self.id = str(uuid.uuid4())
+        self.dataset_path = os.path.join(DATASET_DIR, self.id + ".h5")
+        self.name = "COMB "
+        for ds in datasets:
+            self.name += ds.id + " "
+        self.desc = self.name
+        self.src = datasets[0].src  # we assume that only same product needs to be merged
+        self.crs = datasets[0].crs
+        self.cmap = datasets[0].cmap  # since same product, cmap would also be the same
+        self.timeline = datasets[0].timeline  # we assume the two datasets having the same timeline
+        self.options = {}
+
+        # compute the new bbox
+        self.bbox = datasets[0].bbox
+        for i in range(1, len(datasets)):
+            self.bbox = [
+                [
+                    min(self.bbox[0][0], datasets[i].bbox[0][0]),  # lat_min
+                    min(self.bbox[0][1], datasets[i].bbox[0][1])   # lon_min
+                ], 
+                [
+                    max(self.bbox[1][0], datasets[i].bbox[1][0]),  # lat_max
+                    max(self.bbox[1][1], datasets[i].bbox[1][1])   # lon_max
+                ]
+            ]
+
+        # compute cell size
+        lat_size = np.inf  # corresponding to rows
+        lon_size = np.inf  # corresponding to cols
+        for ds in datasets:
+            res = ds.res
+            bbox = ds.bbox
+            lat_size = np.min([
+                lat_size,
+                (ds.bbox[1][0] - ds.bbox[0][0]) / ds.res[0]
+            ])
+            lon_size = np.min([
+                lon_size, 
+                (ds.bbox[1][1] - ds.bbox[0][1]) / ds.res[1]
+            ])
+
+        # interpolate rasters, parallelize by (dataset, raster)
+        
+        # merge rasters, parallelized by raster
+    
+    @staticmethod
+    def interpolate(dataset, raster_name, bbox_new, lat_size, lon_size):
+        """
+        interpolate data stored as (x, y, z) to the new grid with bbox and cell size indicated
+
+        -parameters-
+        raster_name[str]: indicate the raster to be interpolated
+        bbox_new[list]: bbox of the target grid, [[lat_min, lon_min], [lat_max, lon_max]]
+        lat_size, lon_size[float]: cell size of the target grid
+        """
+        pass
+
+    @staticmethod
+    def merge_rasters(ids, raster_name, q):
+        pass
+
+    def write_merge_result(self, q):
+        pass
