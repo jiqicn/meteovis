@@ -12,10 +12,13 @@ import multiprocessing as mp
 import time
 import json
 import numpy as np
+from scipy.interpolate import griddata
+import wradlib.ipol as ipol
 
 
 DATASET_DIR = os.getcwd() + "/dataset"
 TEMP_DIR = os.getcwd() + "/temp"
+MERGE_STEP = 1000  # step size of the merging result, in metres
 
 
 class Colorbar(object):
@@ -156,13 +159,16 @@ class DatasetGenerator(object):
         for fp in file_paths:
             job = pool.apply_async(self.process_pvol_file, (fp, options, q))
             jobs.append(job)
+
+        # result = (dt, bbox, bbox_metre, data.shape, center, radar)
         for job in jobs:
             result = job.get()
             timeline.append(result[0])
             bbox = result[1]
-            res = result[2]  # resolution, rows * cols
-            options["center"] = result[3]
-            options["radar"] = result[4]
+            bbox_metre = result[2]
+            res = result[3]  # resolution, rows * cols
+            options["center"] = result[4]
+            options["radar"] = result[5]
         timeline.sort()
         q.put("kill")
         pool.close()
@@ -181,6 +187,7 @@ class DatasetGenerator(object):
             f["meta"].attrs.create("options", json.dumps(options))
             f["meta"].attrs.create("cmap", str(cmap))
             f["meta"].attrs.create("bbox", bbox)
+            f["meta"].attrs.create("bbox_metre", bbox_metre)
     
     def process_pvol_file(self, file_path, options, q):
         """
@@ -261,12 +268,16 @@ class DatasetGenerator(object):
             [np.nanmin(carti_grid_4326[..., 1]), np.nanmin(carti_grid_4326[..., 0])],
             [np.nanmax(carti_grid_4326[..., 1]), np.nanmax(carti_grid_4326[..., 0])],
         ]
+        bbox_metre = [
+            [np.nanmin(carti_grid_3857[..., 1]), np.nanmin(carti_grid_3857[..., 0])],
+            [np.nanmax(carti_grid_3857[..., 1]), np.nanmax(carti_grid_3857[..., 0])],
+        ]
         center = (lat, lon)
         
         # put data to the queue
         q.put((dt, data))
             
-        return (dt, bbox, data.shape, center, radar)
+        return (dt, bbox, bbox_metre, data.shape, center, radar)
     
     def write_dataset_file(self, q):
         """
@@ -304,6 +315,7 @@ class Dataset:
                 self.cmap = eval(f["meta"].attrs["cmap"])
                 self.timeline = f["meta"].attrs["timeline"].tolist()
                 self.bbox = f["meta"].attrs["bbox"].tolist()
+                self.bbox_metre = f["meta"].attrs["bbox_metre"].tolist()
             
     def remove(self):
         """
@@ -334,6 +346,7 @@ class Dataset:
 
         # compute the new bbox
         self.bbox = datasets[0].bbox
+        self.bbox_metre = datasets[0].bbox_metre
         for i in range(1, len(datasets)):
             self.bbox = [
                 [
@@ -345,28 +358,43 @@ class Dataset:
                     max(self.bbox[1][1], datasets[i].bbox[1][1])   # lon_max
                 ]
             ]
+            self.bbox_metre = [
+                [
+                    min(self.bbox_metre[0][0], datasets[i].bbox_metre[0][0]),  # lat_min
+                    min(self.bbox_metre[0][1], datasets[i].bbox_metre[0][1])   # lon_min
+                ], 
+                [
+                    max(self.bbox_metre[1][0], datasets[i].bbox_metre[1][0]),  # lat_max
+                    max(self.bbox_metre[1][1], datasets[i].bbox_metre[1][1])   # lon_max
+                ]
+            ]
 
-        # compute cell size
-        lat_size = np.inf  # corresponding to rows
-        lon_size = np.inf  # corresponding to cols
-        for ds in datasets:
-            res = ds.res
-            bbox = ds.bbox
-            lat_size = np.min([
-                lat_size,
-                (ds.bbox[1][0] - ds.bbox[0][0]) / ds.res[0]
-            ])
-            lon_size = np.min([
-                lon_size, 
-                (ds.bbox[1][1] - ds.bbox[0][1]) / ds.res[1]
-            ])
+        # compute resolution of the new grid, with step size to be MERGE_STEP
+        self.res = [
+            int((self.bbox_metre[1][0] - self.bbox_metre[0][0]) / MERGE_STEP), 
+            int((self.bbox_metre[1][1] - self.bbox_metre[0][1]) / MERGE_STEP), 
+        ]
 
         # interpolate rasters, parallelize by (dataset, raster)
+        pool = mp.Pool(mp.cpu_count()+2)
+        jobs = []
+        for ds in datasets:
+            for t in self.timeline:
+                job = pool.apply_async(
+                    self.interpolate, 
+                    (ds, t, self.bbox_metre, self.res)
+                )
+                jobs.append(job)
+        self.result = []  # for testing
+        for job in jobs:
+            self.result.append(job.get())
+        pool.close()
+        pool.join()
         
         # merge rasters, parallelized by raster
     
     @staticmethod
-    def interpolate(dataset, raster_name, bbox_new, lat_size, lon_size):
+    def interpolate(dataset, raster_name, bbox_new, res_new):
         """
         interpolate data stored as (x, y, z) to the new grid with bbox and cell size indicated
 
@@ -375,7 +403,37 @@ class Dataset:
         bbox_new[list]: bbox of the target grid, [[lat_min, lon_min], [lat_max, lon_max]]
         lat_size, lon_size[float]: cell size of the target grid
         """
-        pass
+        # compute the coordinates and values of the original dataset
+        x_step = (dataset.bbox_metre[1][1] - dataset.bbox_metre[0][1]) / dataset.res[1]
+        y_step = (dataset.bbox_metre[1][0] - dataset.bbox_metre[0][0]) / dataset.res[0]
+        x_min = dataset.bbox_metre[0][1] + 0.5 * x_step
+        x_max = dataset.bbox_metre[1][1] - 0.5 * x_step
+        y_min = dataset.bbox_metre[0][0] + 0.5 * y_step
+        y_max = dataset.bbox_metre[1][0] - 0.5 * y_step
+        x_range = np.linspace(x_min, x_max, dataset.res[1])
+        y_range = np.linspace(y_min, y_max, dataset.res[0])
+        x_grid, y_grid = np.meshgrid(x_range, y_range)
+        with h5py.File(dataset.dataset_path, "r") as f:
+            z = f["data"][raster_name][...]     
+        values = z.flatten()
+        coords = np.vstack((x_grid.ravel(), y_grid.ravel())).T
+
+        # compute the x and y range of the target grid
+        x_min_new = bbox_new[0][1]
+        x_max_new = bbox_new[1][1]
+        y_min_new = bbox_new[0][0]
+        y_max_new = bbox_new[1][0]
+        x_range_new = np.linspace(x_min_new, x_max_new, res_new[1])
+        y_range_new = np.linspace(y_min_new, y_max_new, res_new[0])
+        x_grid_new, y_grid_new = np.meshgrid(x_range_new, y_range_new)
+
+        # interpolate values to the new grid
+        z_new = griddata(coords, values, (x_grid_new, y_grid_new), method="nearest")
+
+        # write data to temp files
+
+        return (z, z_new, dataset.cmap)
+
 
     @staticmethod
     def merge_rasters(ids, raster_name, q):
