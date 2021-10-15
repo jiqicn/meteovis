@@ -291,7 +291,12 @@ class DatasetGenerator(object):
                 m = q.get()
                 if m == "kill":
                     break
-                f["data"].create_dataset(m[0], data=m[1], compression="gzip", compression_opts=9)
+                f["data"].create_dataset(
+                    m[0], 
+                    data=m[1], 
+                    compression="gzip", 
+                    compression_opts=9
+                )
                 
 class Dataset:
     """
@@ -343,6 +348,9 @@ class Dataset:
         self.cmap = datasets[0].cmap  # since same product, cmap would also be the same
         self.timeline = datasets[0].timeline  # we assume the two datasets having the same timeline
         self.options = {}
+        with h5py.File(self.dataset_path, "w") as f:
+            f.create_group("data")
+            f.create_group("meta")
 
         # compute the new bbox
         self.bbox = datasets[0].bbox
@@ -368,14 +376,33 @@ class Dataset:
                     max(self.bbox_metre[1][1], datasets[i].bbox_metre[1][1])   # lon_max
                 ]
             ]
+        self.options["center"] = [
+            (self.bbox[0][0] + self.bbox[1][0]) / 2,  # lat
+            (self.bbox[0][1] + self.bbox[1][1]) / 2,  # lon
+        ]
 
         # compute resolution of the new grid, with step size to be MERGE_STEP
         self.res = [
             int((self.bbox_metre[1][0] - self.bbox_metre[0][0]) / MERGE_STEP), 
             int((self.bbox_metre[1][1] - self.bbox_metre[0][1]) / MERGE_STEP), 
         ]
+        
+        # create the dataset file and write to the meta group
+        with h5py.File(self.dataset_path, "r+") as f:
+            f["meta"].attrs.create("id", self.id)
+            f["meta"].attrs.create("name", self.name)
+            f["meta"].attrs.create("desc", self.desc)
+            f["meta"].attrs.create("src", self.src)
+            f["meta"].attrs.create("crs", self.crs)
+            f["meta"].attrs.create("res", self.res)
+            f["meta"].attrs.create("timeline", self.timeline)
+            f["meta"].attrs.create("options", json.dumps(self.options))
+            f["meta"].attrs.create("cmap", str(self.cmap))
+            f["meta"].attrs.create("bbox", self.bbox)
+            f["meta"].attrs.create("bbox_metre", self.bbox_metre)
 
         # interpolate rasters, parallelize by (dataset, raster)
+        print("Start interpolating......", end="", flush=True)
         pool = mp.Pool(mp.cpu_count()+2)
         jobs = []
         for ds in datasets:
@@ -385,13 +412,42 @@ class Dataset:
                     (ds, t, self.bbox_metre, self.res)
                 )
                 jobs.append(job)
-        self.result = []  # for testing
         for job in jobs:
-            self.result.append(job.get())
+            job.get()
         pool.close()
         pool.join()
+        print("[Done]")
         
-        # merge rasters, parallelized by raster
+        # merge rasters, parallelize by raster, and write to the dataset file
+        print("Start merging......", end="", flush=True)
+        pool = mp.Pool(mp.cpu_count()+2)
+        q = mp.Manager().Queue()
+        watcher = pool.apply_async(self.write_merge_result, (q, ))
+        jobs = []
+        ids = []
+        for ds in datasets:
+            ids.append(ds.id) 
+        for t in self.timeline:
+            job = pool.apply_async(
+                self.merge_rasters, 
+                (ids, t, mode, q)
+            )
+            jobs.append(job)
+        for job in jobs:
+            job.get()
+        q.put("kill")
+        pool.close()
+        pool.join()
+        print("[Done]")
+        
+        # clean temps
+        print("Cleaning temp files......", end="", flush=True)
+        for f in os.listdir(TEMP_DIR):
+            if not f.startswith('.'):
+                os.remove(os.path.join(TEMP_DIR, f))
+        print("[Done]")
+
+        print("Merging completed!")
     
     @staticmethod
     def interpolate(dataset, raster_name, bbox_new, res_new):
@@ -412,6 +468,7 @@ class Dataset:
         y_max = dataset.bbox_metre[1][0] - 0.5 * y_step
         x_range = np.linspace(x_min, x_max, dataset.res[1])
         y_range = np.linspace(y_min, y_max, dataset.res[0])
+        y_range = np.flip(y_range)  # raster data stored upside down corresponding to the carte system
         x_grid, y_grid = np.meshgrid(x_range, y_range)
         with h5py.File(dataset.dataset_path, "r") as f:
             z = f["data"][raster_name][...]     
@@ -425,19 +482,59 @@ class Dataset:
         y_max_new = bbox_new[1][0]
         x_range_new = np.linspace(x_min_new, x_max_new, res_new[1])
         y_range_new = np.linspace(y_min_new, y_max_new, res_new[0])
+        y_range_new = np.flip(y_range_new)
         x_grid_new, y_grid_new = np.meshgrid(x_range_new, y_range_new)
 
         # interpolate values to the new grid
         z_new = griddata(coords, values, (x_grid_new, y_grid_new), method="nearest")
 
         # write data to temp files
-
-        return (z, z_new, dataset.cmap)
-
+        temp_name = dataset.id + "_" + raster_name
+        temp_path = os.path.join(TEMP_DIR, temp_name)
+        np.savez_compressed(temp_path, data=z_new)
 
     @staticmethod
-    def merge_rasters(ids, raster_name, q):
-        pass
+    def merge_rasters(ids, raster_name, mode, q):
+        """
+        merge the interpolated rasters into one
+        
+        -parameters-
+        ids[list]: list of ids of input datasets
+        raster_name[str]
+        mode[str]: indicate method of merging
+        q[mp.Manager.Queue]
+        """
+        temp_paths = []
+        for ds_id in ids:
+            temp_name = ds_id + "_" + raster_name + ".npz"
+            temp_paths.append(
+                os.path.join(TEMP_DIR, temp_name)
+            )
+        
+        result = np.load(temp_paths[0])["data"]
+        for i in range(1, len(temp_paths)):
+            temp = np.load(temp_paths[i])["data"]
+            if mode == "avg":
+                result = np.nanmean([result, temp], axis=0)
+            elif mode == "max":
+                result = np.fmax(result, temp)
+            elif mode == "min":
+                result = np.fmin(result, temp)
+        
+        q.put((raster_name, result))
 
     def write_merge_result(self, q):
-        pass
+        """
+        write merging result to dataset file
+        """
+        with h5py.File(self.dataset_path, "r+") as f:
+            while True:
+                m = q.get()
+                if m == "kill":
+                    break
+                f["data"].create_dataset(
+                    m[0], 
+                    data=m[1], 
+                    compression="gzip", 
+                    compression_opts=9
+                )

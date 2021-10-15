@@ -212,7 +212,11 @@ def operate_datasets(dir_path=DATASET_DIR):
         description="Confirm Selection"
     )
     w_vis_output = widgets.Output()
-    w_view_box = widgets.HBox() # where to add views
+    # w_view_box = widgets.HBox() # where to add views
+    w_view_box = widgets.GridBox(
+        children=[], 
+        layout=widgets.Layout(grid_template_columns="100%")
+    )
     w_ctrl_box = widgets.VBox() # where to add controls like animation player
     w_tabs.children += (
         widgets.VBox([
@@ -310,6 +314,11 @@ def operate_datasets(dir_path=DATASET_DIR):
         ap.init_views()
         
         # display maps and controls
+        # gridbox with maximum 2 cols
+        if len(views) <= 1:
+            w_view_box.layout = widgets.Layout(grid_template_columns="100%")
+        else:
+            w_view_box.layout = widgets.Layout(grid_template_columns="50% 50%")
         for v in views:
             w_view_box.children += (v.map, )
         w_ctrl_box.children += (ap.get_player(), )
