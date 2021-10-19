@@ -107,7 +107,7 @@ class View(object):
         pool = mp.Pool(mp.cpu_count() + 2)
         jobs = []
         
-        print("[" + dataset_id + "]" + "Rendering and caching......", end="", flush=True)
+        print("Rendering and caching %s......" % self.dataset.name, end="", flush=True)
         for rn in raster_names:
             job = pool.apply_async(
                 self.render_image, 

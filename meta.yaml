@@ -1,9 +1,9 @@
 package:
   name: "meteovis"
-  version: "0.1.0a"
+  version: "0.1.0"
 
 source:
-  git_rev: v0.1.0a
+  git_rev: v0.1.0
   git_url: https://github.com/jiqicn/meteovis
 
 requirements:
@@ -16,6 +16,7 @@ requirements:
     - python
     - ipywidgets
     - ipyfilechooser
+    - ipyleaflet
     - qgrid
     - pandas
     - h5py

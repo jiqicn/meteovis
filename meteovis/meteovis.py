@@ -181,7 +181,9 @@ def operate_datasets(dir_path=DATASET_DIR):
     -returns-
     object of listing-datasets GUI
     """    
-    # define the GUI
+    ##################
+    # define the GUI #
+    ##################
     w_title = widgets.HTML(
         value="<b style='font-size: large'>Dataset Operations</b>"
     )
@@ -193,6 +195,7 @@ def operate_datasets(dir_path=DATASET_DIR):
     w_tabs.set_title(0, "General")
     w_tabs.set_title(1, "Visualization")
     w_tabs.set_title(2, "Merging")
+    w_tabs.set_title(3, "Updating")
     
     # General tab
     w_refresh = widgets.Button(
@@ -265,7 +268,24 @@ def operate_datasets(dir_path=DATASET_DIR):
         w_tabs, 
     ])
     
-    # define events of GUI widgets
+    # updating tab
+    w_update_input = widgets.Text(description="Equation")
+    w_update_output = widgets.Output()
+    w_update = widgets.Button(description="Update")
+    w_tabs.children += (
+        widgets.VBox([
+            widgets.HTML("<b>Input your equation to update a dataset</b>"), 
+            widgets.HBox([
+                w_update_input, 
+                w_update
+            ]), 
+            w_update_output
+        ]), 
+    )
+    
+    ################################
+    # define events of GUI widgets #
+    ################################
     def refresh_on_click(b=None):
         """
         refresh dataset information
@@ -326,7 +346,7 @@ def operate_datasets(dir_path=DATASET_DIR):
             with h5py.File(dst_path, "r+") as f:
                 f["meta"].attrs.modify("id", id_new)
                 old_name = f["meta"].attrs["name"]
-                f["meta"].attrs.modify("name", "COPY [" + old_name + "]")
+                f["meta"].attrs.modify("name", "COPY " + old_name)
         refresh_on_click()
     w_copy.on_click(copy_on_click)
     
@@ -393,9 +413,25 @@ def operate_datasets(dir_path=DATASET_DIR):
                 w_merge_name.value, 
                 w_merge_desc.value
             )
-        
         refresh_on_click()  # refresh the list view of datasets
     w_merge.on_click(merge_on_click)
+
+    def update_on_click(b=None):
+        """
+        update dataset(s) based on user's input
+        """
+        update_eq = w_update_input.value
+        selection = w_table.get_selected_df()
+        ids_to_update = selection.index.values
+        
+        w_update_output.clear_output()
+        with w_update_output:
+            for dn in ids_to_update:
+                dn = dn + ".h5"
+                dp = os.path.join(dir_path, dn)
+                Dataset(dp).update(update_eq)
+        refresh_on_click()
+    w_update.on_click(update_on_click)
     
     # init the dataset list and dataframe of dataset information
     refresh_on_click()

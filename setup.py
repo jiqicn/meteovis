@@ -3,7 +3,7 @@ from setuptools import setup
 setup(
     name = 'meteovis',
     packages = ['meteovis'],
-    version = '0.1.0a',
+    version = '0.1.0',
     license='MIT',
     description = 'A jupyter-based tool for visualizing and exploring meteorological and bioecological data hosted at UvA-TCE.',
     author = '@jiqicn',
@@ -14,6 +14,7 @@ setup(
     install_requires=[
         'ipywidgets',
         'ipyfilechooser',
+        'ipyleaflet'
         'qgrid', 
         'pandas', 
         'h5py', 
@@ -21,7 +22,7 @@ setup(
         'wradlib', 
     ],
     classifiers=[
-        'Development Status :: 3 - Alpha', 
+        'Development Status :: 5 - Production/Stable', 
         'Intended Audience :: Developers',
         'Topic :: Software Development :: Build Tools',
         'License :: OSI Approved :: MIT License',

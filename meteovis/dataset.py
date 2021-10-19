@@ -14,6 +14,7 @@ import json
 import numpy as np
 from scipy.interpolate import griddata
 import wradlib.ipol as ipol
+from math import *
 
 
 DATASET_DIR = os.getcwd() + "/dataset"
@@ -235,7 +236,12 @@ class DatasetGenerator(object):
             
         # compute polar grid
         polar_grid = np.empty((nrays, nbins, 3))  # azimuth, range, height
-        polar_grid = wrl.georef.sweep_centroids(nrays=nrays, rscale=rscale, nbins=nbins, elangle=elangle)
+        polar_grid = wrl.georef.sweep_centroids(
+            nrays=nrays, 
+            rscale=rscale, 
+            nbins=nbins, 
+            elangle=elangle
+        )
         
         # compute cartisian grid of both projection epsg4326 (in degree) and epsg3857 (in metre)
         carti_grid_4326 = wrl.georef.polar.spherical_to_proj(
@@ -328,6 +334,90 @@ class Dataset:
         """
         os.remove(self.dataset_path)
         
+    def update(self, eq):
+        """
+        update all rasters in the dataset regarding an input equation string
+        """
+        # update rasters
+        print("Start updating %s......" % self.name, end="", flush=True)
+        pool = mp.Pool(mp.cpu_count()+2)
+        jobs = []
+        for t in self.timeline:
+            job = pool.apply_async(
+                self.update_raster, 
+                (t, eq)
+            )
+            jobs.append(job)
+        for job in jobs:
+            self.test = job.get()
+        pool.close()
+        pool.join()
+        
+        # create a new dataset for this updating result
+        id_new = str(uuid.uuid4())
+        dataset_path_new = os.path.join(DATASET_DIR, id_new + ".h5")
+        with h5py.File(dataset_path_new, "w") as f:
+            f.create_group("data")
+            f.create_group("meta")
+            f["meta"].attrs.create("id", id_new)
+            f["meta"].attrs.create("name", "UPDATE %s" % self.name)
+            f["meta"].attrs.create("desc", 'Updated by "%s"' % eq)
+            f["meta"].attrs.create("src", self.src)
+            f["meta"].attrs.create("crs", self.crs)
+            f["meta"].attrs.create("res", self.res)
+            f["meta"].attrs.create("timeline", self.timeline)
+            f["meta"].attrs.create("options", json.dumps(self.options))
+            f["meta"].attrs.create("cmap", str(self.cmap))
+            f["meta"].attrs.create("bbox", self.bbox)
+            f["meta"].attrs.create("bbox_metre", self.bbox_metre)
+        
+            # read temp files and fill in the new dataset file        
+            for t in self.timeline:
+                temp_name = self.id + "_" + t + ".npz"
+                temp_path = os.path.join(TEMP_DIR, temp_name)
+                result = np.load(temp_path)["data"]
+                f["data"].create_dataset(
+                    t, 
+                    data=result, 
+                    compression="gzip", 
+                    compression_opts=9
+                )
+        
+        # clean up temp files
+        for f in os.listdir(TEMP_DIR):
+            if not f.startswith('.'):
+                os.remove(os.path.join(TEMP_DIR, f))
+        print("[Done]")
+    
+    def update_raster(self, raster_name, eq):
+        """
+        update a raster of dataset by a given equation
+        
+        -parameters-
+        dataset_path[str]
+        raster_name[str]
+        eq[str]: equation string input by user
+        """
+        # alias of some numpy operations
+        sqrt = np.sqrt
+        
+        with h5py.File(self.dataset_path, "r") as f:
+            ds = f["data"][raster_name][...]
+        result = eval(eq)
+        
+        # if return is a mask, apply the mask to data
+        result_unique = np.unique(result)
+        if result_unique.size <= 2:
+            if set(result_unique).issubset(set([True, False])):
+                result = np.where(~result, np.nan, ds)
+        
+        # write result to temp
+        temp_name = self.id + "_" + raster_name
+        temp_path = os.path.join(TEMP_DIR, temp_name)
+        np.savez_compressed(temp_path, data=result)
+        
+        return [raster_name, result]
+        
     def merge(self, mode, datasets, name, desc):
         """
         merge two or more datasets into one
@@ -339,12 +429,13 @@ class Dataset:
         # initialize dataset
         self.id = str(uuid.uuid4())
         self.dataset_path = os.path.join(DATASET_DIR, self.id + ".h5")
+        dataset_names = ""
+        for ds in datasets:
+            dataset_names += ds.name + ", "
+        dataset_names = dataset_names[:-2]
         if name == "":
-            self.name = "COMB ["
-            for ds in datasets:
-                self.name += ds.name + ", "
-            self.name = self.name[:-2]
-            self.name += "]"
+            self.name = "COMB-%s " % mode
+            self.name += dataset_names
         else:
             self.name = name
         if desc == "":
@@ -410,7 +501,7 @@ class Dataset:
             f["meta"].attrs.create("bbox_metre", self.bbox_metre)
 
         # interpolate rasters, parallelize by (dataset, raster)
-        print("Start interpolating......", end="", flush=True)
+        print("Start merging %s......" % dataset_names, end="", flush=True)
         pool = mp.Pool(mp.cpu_count()+2)
         jobs = []
         for ds in datasets:
@@ -424,10 +515,8 @@ class Dataset:
             job.get()
         pool.close()
         pool.join()
-        print("[Done]")
         
         # merge rasters, parallelize by raster, and write to the dataset file
-        print("Start merging......", end="", flush=True)
         pool = mp.Pool(mp.cpu_count()+2)
         q = mp.Manager().Queue()
         watcher = pool.apply_async(self.write_merge_result, (q, ))
@@ -446,16 +535,12 @@ class Dataset:
         q.put("kill")
         pool.close()
         pool.join()
-        print("[Done]")
         
         # clean temps
-        print("Cleaning temp files......", end="", flush=True)
         for f in os.listdir(TEMP_DIR):
             if not f.startswith('.'):
                 os.remove(os.path.join(TEMP_DIR, f))
         print("[Done]")
-
-        print("Merging completed!")
     
     @staticmethod
     def interpolate(dataset, raster_name, bbox_new, res_new):
