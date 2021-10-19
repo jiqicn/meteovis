@@ -9,7 +9,10 @@ import matplotlib.pyplot as plt
 import multiprocessing as mp
 import h5py
 import os
-from ipyleaflet import Map, basemaps, FullScreenControl, ImageOverlay
+from ipyleaflet import Map, basemaps, FullScreenControl, ImageOverlay, WidgetControl
+import base64
+import io
+import numpy as np
 
 
 CACHE_DIR = os.getcwd() + "/cache"
@@ -33,6 +36,43 @@ class View(object):
             attribution_control=False, 
         )
         self.map.add_control(FullScreenControl())
+        
+        # colorbar widget
+        cbar_buf = io.BytesIO()
+        cmap = dataset.cmap[0]
+        vmin = dataset.cmap[1]
+        vmax = dataset.cmap[2]
+        plt.figure(figsize=(3, 0.5))
+        plt.imshow(
+            np.array([[vmin, vmax]]), 
+            cmap=cmap
+        )
+        plt.gca().set_visible(False)
+        plt.colorbar(
+            cax=plt.axes([0.1, 0.2, 0.8, 0.3]), 
+            orientation="horizontal", 
+            extend="both"
+        )
+        plt.savefig(
+            cbar_buf, 
+            format="png", 
+            transparent=True, 
+            bbox_inches="tight", 
+            pad_inches=0
+        )
+        plt.close()
+        cbar_buf.seek(0)
+        cbar_b64 = base64.b64encode(cbar_buf.read()).decode('ascii')
+        img_str = '<div style="padding-left: 10px; padding-right: 10px">'
+        img_str += '<p><b>Dataset: %s</b></p>' % dataset.name
+        img_str += '<img src="data:image/png;base64, %s"/></div>' % cbar_b64
+        w_cbar = widgets.HTML(
+            img_str, 
+            layout=widgets.Layout(padding='20 20 20 20')
+        )
+        self.map.add_control(
+            WidgetControl(widget=w_cbar, position='topright')
+        )
         
         # raster layer
         self.raster = ImageOverlay(

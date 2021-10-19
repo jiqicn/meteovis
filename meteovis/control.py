@@ -146,3 +146,26 @@ class ImageBuffer(dict):
         self[img_name] = img_buf
         
         return img_buf
+    
+
+class OpacityController(object):
+    def __init__(self, views):
+        """
+        Opacity control widget
+        """
+        self.opactl = widgets.FloatSlider(
+            value=1, 
+            min=0, 
+            max=1, 
+        )
+        
+        def change_opactl(e=None):
+            for v in views:
+                v.raster.opacity = e["new"]
+        self.opactl.observe(change_opactl, names="value")
+    
+    def get_controler(self):
+        return widgets.HBox([
+            widgets.HTML('<b>Opacity&nbsp</b>'), 
+            self.opactl
+        ])

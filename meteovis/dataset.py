@@ -328,7 +328,7 @@ class Dataset:
         """
         os.remove(self.dataset_path)
         
-    def merge(self, mode, *datasets):
+    def merge(self, mode, datasets, name, desc):
         """
         merge two or more datasets into one
 
@@ -339,10 +339,18 @@ class Dataset:
         # initialize dataset
         self.id = str(uuid.uuid4())
         self.dataset_path = os.path.join(DATASET_DIR, self.id + ".h5")
-        self.name = "COMB "
-        for ds in datasets:
-            self.name += ds.id + " "
-        self.desc = self.name
+        if name == "":
+            self.name = "COMB ["
+            for ds in datasets:
+                self.name += ds.name + ", "
+            self.name = self.name[:-2]
+            self.name += "]"
+        else:
+            self.name = name
+        if desc == "":
+            self.desc = ""
+        else:
+            self.desc = self.name
         self.src = datasets[0].src  # we assume that only same product needs to be merged
         self.crs = datasets[0].crs
         self.cmap = datasets[0].cmap  # since same product, cmap would also be the same

@@ -5,7 +5,7 @@ Author: @jiqicn
 """
 from .dataset import DatasetGenerator, Dataset, DATASET_DIR
 from .view import View
-from .control import AnimePlayer
+from .control import AnimePlayer, OpacityController
 
 import ipywidgets as widgets
 from ipyfilechooser import FileChooser
@@ -14,6 +14,9 @@ import pandas as pd
 import h5py
 import json
 import os
+import time
+import shutil
+import uuid
 
 
 def process_data():
@@ -189,6 +192,7 @@ def operate_datasets(dir_path=DATASET_DIR):
     w_tabs = widgets.Tab()
     w_tabs.set_title(0, "General")
     w_tabs.set_title(1, "Visualization")
+    w_tabs.set_title(2, "Merging")
     
     # General tab
     w_refresh = widgets.Button(
@@ -197,22 +201,25 @@ def operate_datasets(dir_path=DATASET_DIR):
     w_remove = widgets.Button(
         description="Remove"
     )
+    w_copy = widgets.Button(
+        description="Copy"
+    )
     w_tabs.children += (
         widgets.VBox([
             widgets.HTML('<b>Select ONE dataset for the operations below.</b>'), 
             widgets.HBox([
                 w_refresh, 
-                w_remove, 
+                w_remove,
+                w_copy
             ]), 
         ]), 
     )
     
-    # Visualization tab
+    # visualization tab
     w_select_vis = widgets.Button(
         description="Confirm Selection"
     )
     w_vis_output = widgets.Output()
-    # w_view_box = widgets.HBox() # where to add views
     w_view_box = widgets.GridBox(
         children=[], 
         layout=widgets.Layout(grid_template_columns="100%")
@@ -221,15 +228,34 @@ def operate_datasets(dir_path=DATASET_DIR):
     w_tabs.children += (
         widgets.VBox([
             widgets.HTML(
-                '<p><b>Select ONE or TWO dataset(s) for visualization.</b></p>' + 
-                '<p>If you select two datasets, they will be presented side-by-side.</p>' +
-                '<p>If you select more than two datasets, only the first two will be visualized.<p>' +
+                '<p><b>Select dataset(s) for visualization.</b></p>' + 
                 '<p>Press the button below to confirm your selection.</p>'
             ), 
             w_select_vis, 
             w_vis_output, 
             w_view_box, 
             w_ctrl_box, 
+        ]), 
+    )
+    
+    # merging tab
+    w_merge = widgets.Button(description="Merge")
+    w_merge_method = widgets.Dropdown(
+        description="Method", 
+        options=["avg", "max", "min"], 
+        value="avg"
+    )
+    w_merge_name = widgets.Text(description="Name")
+    w_merge_desc = widgets.Text(description="Description")
+    w_merge_output = widgets.Output()
+    w_tabs.children += (
+        widgets.VBox([
+            widgets.HTML("<p><b>Select datasets for merging.</b><p>"), 
+            w_merge_method, 
+            w_merge_name, 
+            w_merge_desc, 
+            w_merge,
+            w_merge_output, 
         ]), 
     )
     
@@ -249,14 +275,13 @@ def operate_datasets(dir_path=DATASET_DIR):
             if not dn.startswith('.'):
                 dp = os.path.join(dir_path, dn)
                 ds = Dataset(dp)
+                ctime = time.ctime(os.path.getctime(dp))
                 dataset_info.append([
                     ds.id, 
                     ds.name, 
                     ds.desc, 
                     ds.src,
-                    ds.timeline[0],
-                    ds.timeline[-1], 
-                    json.dumps(ds.options)
+                    ctime
                 ])
         dataset_info = pd.DataFrame(
             dataset_info, 
@@ -265,9 +290,7 @@ def operate_datasets(dir_path=DATASET_DIR):
                 "Name", 
                 "Description", 
                 "Data Source", 
-                "Start Time", 
-                "End Time", 
-                "Metainfo"
+                "Create Time", 
             ]
         )
         dataset_info.set_index("ID", inplace=True) # set ID as index column
@@ -286,6 +309,26 @@ def operate_datasets(dir_path=DATASET_DIR):
             Dataset(dp).remove()
         refresh_on_click()
     w_remove.on_click(remove_on_click)
+    
+    def copy_on_click(b=None):
+        """
+        copy an existing dataset to file
+        """
+        selection = w_table.get_selected_df()
+        ids_to_copy = selection.index.values
+        for id_old in ids_to_copy:
+            src_path = os.path.join(dir_path, id_old + ".h5")
+            id_new = str(uuid.uuid4())
+            dst_path = os.path.join(dir_path, id_new+".h5")
+            shutil.copyfile(src_path, dst_path)
+            
+            # change information in the new dataset file
+            with h5py.File(dst_path, "r+") as f:
+                f["meta"].attrs.modify("id", id_new)
+                old_name = f["meta"].attrs["name"]
+                f["meta"].attrs.modify("name", "COPY [" + old_name + "]")
+        refresh_on_click()
+    w_copy.on_click(copy_on_click)
     
     def select_vis_on_click(b=None):
         """
@@ -312,6 +355,7 @@ def operate_datasets(dir_path=DATASET_DIR):
         # initialize controls and views
         ap = AnimePlayer(views)
         ap.init_views()
+        oc = OpacityController(views)
         
         # display maps and controls
         # gridbox with maximum 2 cols
@@ -321,9 +365,37 @@ def operate_datasets(dir_path=DATASET_DIR):
             w_view_box.layout = widgets.Layout(grid_template_columns="50% 50%")
         for v in views:
             w_view_box.children += (v.map, )
-        w_ctrl_box.children += (ap.get_player(), )
-        
+        w_ctrl_box.children += (
+            ap.get_player(), 
+            oc.get_controler(), 
+        )
     w_select_vis.on_click(select_vis_on_click)
+    
+    def merge_on_click(b=None):
+        """
+        merge the datasets selected
+        """
+        ds_m = Dataset()  # dataset object for the merging result
+        selection = w_table.get_selected_df()
+        ids_to_merge = selection.index.values
+        method = w_merge_method.value
+        datasets = []
+        for dn in ids_to_merge:
+            dn = dn + ".h5"
+            dp = os.path.join(dir_path, dn)
+            datasets.append(Dataset(dp))
+        
+        w_merge_output.clear_output()
+        with w_merge_output:
+            ds_m.merge(
+                method, 
+                datasets, 
+                w_merge_name.value, 
+                w_merge_desc.value
+            )
+        
+        refresh_on_click()  # refresh the list view of datasets
+    w_merge.on_click(merge_on_click)
     
     # init the dataset list and dataframe of dataset information
     refresh_on_click()
