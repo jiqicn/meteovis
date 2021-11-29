@@ -86,10 +86,15 @@ class View(object):
         """
         initialize the interactive map and put the raster layer
         
+        Raster will be update only when the input image is not None.
+        This means that the raster will remain the same,
+        if there is no data for the coming timestamp
+        
         -parameters-
         img[str]: image buffer encoded in base64
         """
-        self.raster.url = img
+        if img is not None:
+            self.raster.url = img
         
     def create_cache(self, cache_dir=CACHE_DIR):
         """

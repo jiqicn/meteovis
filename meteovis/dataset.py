@@ -506,6 +506,8 @@ class Dataset:
         jobs = []
         for ds in datasets:
             for t in self.timeline:
+                if t not in ds.timeline:
+                    continue
                 job = pool.apply_async(
                     self.interpolate, 
                     (ds, t, self.bbox_metre, self.res)
@@ -600,9 +602,9 @@ class Dataset:
         temp_paths = []
         for ds_id in ids:
             temp_name = ds_id + "_" + raster_name + ".npz"
-            temp_paths.append(
-                os.path.join(TEMP_DIR, temp_name)
-            )
+            temp_path = os.path.join(TEMP_DIR, temp_name)
+            if os.path.exists(temp_path):
+                temp_paths.append(temp_path)
         
         result = np.load(temp_paths[0])["data"]
         for i in range(1, len(temp_paths)):

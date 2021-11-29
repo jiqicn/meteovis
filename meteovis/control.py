@@ -12,7 +12,7 @@ import os
 import base64
 
 
-IMAGE_BUFFER_SIZE = 100
+IMAGE_BUFFER_SIZE = 500
 ANIME_SPEED = 400  # speed control, miliseconds between every two frames
 
 
@@ -139,7 +139,8 @@ class ImageBuffer(dict):
             img_buf = base64.b64encode(img_buf).decode('ascii')
             img_buf = "data:image/png;base64," + img_buf
         except FileNotFoundError:  
-            img_buf = EMPTY_IMAGE  # if image not exist, return empty image
+            # img_buf = EMPTY_IMAGE  # if image not exist, return empty image
+            img_buf = None
         
         # add image to the queue
         self._queue.append(img_name)
