@@ -1,28 +1,32 @@
 # MeteoVis
 A jupyter-based tool for visualizing and exploring meteorological and bioecological data hosted at UvA-TCE.
 
-## Install
-It's highly recommand to use anaconda/miniconda to install meteovis and manage dependencies. Especially, anaconda provides a quite convenient way of installing wradlib with GDAL and libgdal, which is usually difficult to do with pypi. 
+## Usage
+Process files to dataset:
+![Process files screen](readme_gifs/process_files.gif)
 
-First, you need to create a new conda environment and install python 3.8:
+Visualize datasets:
+![Visualize datasets screen](readme_gifs/visualize_datasets.gif)
 
-```console
+Merging datasets:
+![Merge datasets screen](readme_gifs/merge_datasets.gif)
+
+Update datasets:
+![Update datasets screen](readme_gifs/update_datasets.gif)
+
+## Installation
+Using Anaconda:
+
+```shell
+conda config --add channels conda-forge
+conda config --set channel_priority strict
 conda create -n <name-of-your-env> python=3.8
-```
-
-Replace ```<name-of-your-env>``` with any name you want. After that, activate your environment:
-
-```console
 conda activate <name-of-your-env>
-```
-
-Install meteovis with the following command:
-
-```console
 conda install -c jiqi meteovis
 ```
+When installing into JupyterLab 1 or 2, you need to also install the labextensions:
 
-## Something to Note
-
-### Dataset, Cache, and Temp Folder
-By importing MeteVis, two folders named ```dataset```, ```cache```, and ```temp``` will be automatically created in the same folder as your working notebook. This is the place where you can find your datasets and image cache.
+```shell
+jupyter labextension install @jupyter-widgets/jupyterlab-manager jupyter-leaflet @j123npm/qgrid2@1.1.4
+```
+For now, MeteoVis is only available on AMD64 Linux systems. 
