@@ -30,7 +30,10 @@ def process_data():
     
     # define the GUI
     w_title = widgets.HTML(
-        value="<b style='font-size: large'>Process files to dataset</b>"
+        value="<p><b style='font-size: large'>Process files to dataset</b><p>" + 
+        "<p>Please make sure that:</p>" + 
+        "<p>1. All the files you want to process are directly under the folder you select.</p>" + 
+        "<p>2. All the files processed in one round are collected from the same radar.</p>"
     )
     w_path = FileChooser(
         title="<b>Select data folder</b>", 
@@ -47,7 +50,7 @@ def process_data():
         options=[
             "", 
             "pvol", 
-            "era5"
+#             "era5"
         ]
     )
     w_options = widgets.VBox()
@@ -274,7 +277,16 @@ def operate_datasets(dir_path=DATASET_DIR):
     w_update = widgets.Button(description="Update")
     w_tabs.children += (
         widgets.VBox([
-            widgets.HTML("<b>Input your equation to update a dataset</b>"), 
+            widgets.HTML("<p><b>Input your equation to update a dataset</b></p>" +
+                        "<p>Supported Operations:</p>" + 
+                        "<p>1. Math operations: +, -, *, /, ** (power), // (floor division), % (Modulus).</p>" + 
+                        "<p>2. Logic operations: >, <, >=, <=, ==, !=, & (logical and), | (logical or).</p>" + 
+                        "<p>Examples: </p>" + 
+                        "<p>1. ds ** (1/2): computing square root of the dataset.</p>" + 
+                        "<p>2. (ds<0) | (ds>10): removing value in [0, 10] from the dataset." + 
+                        "<p>Tips: </p>" + 
+                        "<p>1. Primary of operations can be indicated with (), like the first example shows.</p>" +
+                        "<p>2. Mix of math and logic operations is not allowed, e.g., ((ds<0) | (ds>10))**(1/2) won't work out.</p>"), 
             widgets.HBox([
                 w_update_input, 
                 w_update
