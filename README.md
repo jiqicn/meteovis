@@ -1,6 +1,8 @@
 # MeteoVis
 A jupyter-based tool for visualizing and exploring meteorological and bioecological data hosted at UvA-TCE.
 
+Documentations of APIs can be found [here](https://htmlpreview.github.io/?https://raw.githubusercontent.com/jiqicn/meteovis/main/docs/index.html).
+
 ## Usage
 Process files to dataset:
 ![Process files screen](readme_gifs/process_files.gif)
